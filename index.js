@@ -20,11 +20,6 @@ let worldName = null;
 
 let addonPath = 'BDS-Addons/';
 
-let serverPacksJsonPath = 'valid_known_packs.json';
-let serverPacksJSON = null;
-let serverResourcesDir = 'resource_packs/';
-let serverBehaviorsDir = 'behavior_packs/';
-
 let worldResourcesJsonPath = 'worlds/<worldname>/world_resource_packs.json';
 let worldResourcesJSON = null;
 let worldBehaviorsJsonPath = 'worlds/<worldname>/world_behavior_packs.json';
@@ -40,7 +35,7 @@ let installedWorldResources = new Map();
 let installedWorldBehaviors = new Map();
 
 // These files will be validated to confirm the provided serverPath is accurate.
-const requiredFiles = ['behavior_packs', 'resource_packs', 'valid_known_packs.json'];
+const requiredFiles = ['behavior_packs', 'resource_packs'];
 
 export default class BDSAddonInstaller {
 
@@ -72,31 +67,22 @@ export default class BDSAddonInstaller {
         worldBehaviorsJsonPath = path.join(serverPath, worldBehaviorsJsonPath.replace('<worldname>', worldName));
         worldResourcesDir = path.join(serverPath, worldResourcesDir.replace('<worldname>', worldName));
         worldBehaviorsDir = path.join(serverPath, worldBehaviorsDir.replace('<worldname>', worldName));
-        serverPacksJsonPath = path.join(serverPath, serverPacksJsonPath);
-        serverResourcesDir = path.join(serverPath, serverResourcesDir);
-        serverBehaviorsDir = path.join(serverPath, serverBehaviorsDir); 
 
         // Create JSON files if they do not exists
-        fs.ensureFileSync(serverPacksJsonPath);
         fs.ensureFileSync(worldResourcesJsonPath);
         fs.ensureFileSync(worldBehaviorsJsonPath);
         
         // Read installed packs from JSON files & attempt to parse content.
-        let serverPackContents = fs.readFileSync(serverPacksJsonPath);
         let worldResourceContents = fs.readFileSync(worldResourcesJsonPath);
         let worldBehaviorContents = fs.readFileSync(worldBehaviorsJsonPath);
         // If there is an error parsing JSON assume no packs installed and use empty array.
-        try { serverPacksJSON = JSON.parse(serverPackContents) } catch(err) { serverPacksJSON = [] };
         try { worldResourcesJSON = JSON.parse(worldResourceContents) } catch(err) { worldResourcesJSON = [] };
         try { worldBehaviorsJSON = JSON.parse(worldBehaviorContents) } catch(err) { worldBehaviorsJSON = [] };
         // If unexpected results from parsing JSON assume no packs installed and use empty array.
-        if (!Array.isArray(serverPacksJSON)) serverPacksJSON = [];
         if (!Array.isArray(worldResourcesJSON)) worldResourcesJSON = [];
         if (!Array.isArray(worldBehaviorsJSON)) worldBehaviorsJSON = [];
 
         // Map installed packs from install directories
-        installedServerResources = mapInstalledPacks(serverResourcesDir);
-        installedServerBehaviors = mapInstalledPacks(serverBehaviorsDir);
         installedWorldResources = mapInstalledPacks(worldResourcesDir);
         installedWorldBehaviors = mapInstalledPacks(worldBehaviorsDir);
     }
@@ -155,7 +141,6 @@ export default class BDSAddonInstaller {
             }else{
                 // uninstall pack if not up to date
                 log.detail('BDSAddonInstaller - Uninstalling old version of pack');
-                if (installedServerPack) await uninstallServerPack(uuid, installedServerPack.location);
                 if (installedWorldPack && type == 'resources') await uninstallWorldResource(uuid, installedWorldPack.location);
                 if (installedWorldPack && type == 'data') await uninstallWorldBehavior(uuid, installedWorldPack.location);
             }
@@ -224,17 +209,15 @@ async function installPack(packPath, manifest) {
     }
 
     // Create placeholder variables for pack installation paths. 
-    let installServerPath, installWorldPath, WorldPacksJSON, WorldPacksPath, rawPath = null;
+    let installWorldPath, WorldPacksJSON, WorldPacksPath, rawPath = null;
 
     // Update variables based on the pack type.
-    if (type == 'data') {
-        installServerPath = path.join(serverBehaviorsDir, name);
+    if (type == 'data' || type == 'script') {
         installWorldPath = path.join(worldBehaviorsDir, name);
         WorldPacksJSON = worldBehaviorsJSON;
         WorldPacksPath = worldBehaviorsJsonPath;
         rawPath = 'behavior_packs/' + name;
     }else if (type == 'resources') {
-        installServerPath = path.join(serverResourcesDir, name);
         installWorldPath = path.join(worldResourcesDir, name);
         WorldPacksJSON = worldResourcesJSON;
         WorldPacksPath = worldResourcesJsonPath;
@@ -248,13 +231,6 @@ async function installPack(packPath, manifest) {
     WorldPacksJSON.unshift(worldPackInfo);
     await promiseExtract(packPath, installWorldPath);
     await fs.writeFile(WorldPacksPath, JSON.stringify(WorldPacksJSON, undefined, 2));
-    
-    // Install pack to the server.
-    version = `${version[0]}.${version[1]}.${version[2]}`;
-    let serverPackInfo = {"file_system": "RawPath", "path": rawPath, "uuid": uuid, "version": version};
-    serverPacksJSON.splice(1, 0, serverPackInfo);
-    await promiseExtract(packPath, installServerPath);
-    await fs.writeFile(serverPacksJsonPath, JSON.stringify(serverPacksJSON, undefined, 2));
 }
 
 /**
@@ -269,21 +245,15 @@ async function uninstallAllWorldPacks() {
     // Uninstall all cached world resource packs.
     for (let pack of installedWorldResources.values()) {
         await uninstallWorldResource(pack.uuid, pack.location);
-        let serverPack = installedServerResources.get(pack.uuid);
-        if (serverPack) await uninstallServerPack(pack.uuid, serverPack.location);
     }
 
     // Uninstall all cached world behavior packs.
     for (let pack of installedWorldBehaviors.values()) {
         await uninstallWorldBehavior(pack.uuid, pack.location);
-        let serverPack = installedServerBehaviors.get(pack.uuid);
-        if (serverPack) await uninstallServerPack(pack.uuid, serverPack.location);
     }
 
     // All packs are cached by the constructor.
     // Reload world packs after uninstall. 
-    installedServerResources = mapInstalledPacks(serverResourcesDir);
-    installedServerBehaviors = mapInstalledPacks(serverBehaviorsDir);
     installedWorldResources = mapInstalledPacks(worldResourcesDir);
     installedWorldBehaviors = mapInstalledPacks(worldBehaviorsDir);
 }
